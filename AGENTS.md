@@ -10,6 +10,7 @@ pip install -r requirements.txt
 python -m py_compile $(find fraud_agent tests -name '*.py')  # syntax check
 pytest -q                                                    # full suite, must be green
 python -m fraud_agent.demo                                   # mock demo, no key needed
+python -m fraud_agent.demo --file path/to/invoice.pdf        # ingest + audit one document
 GOOGLE_API_KEY=... python -m fraud_agent.demo --live         # live ADK + Gemini demo
 ```
 
@@ -20,6 +21,7 @@ GOOGLE_API_KEY=... python -m fraud_agent.demo --live         # live ADK + Gemini
 - `pipeline.py` and `agent.py` must stay in lockstep: same five stages (intake → extract → validate → verdict → report), same tool functions. If you add a stage, add it to both. `agent.py` wraps each stage `LlmAgent` with `workflow.node()` and chains them as a `Workflow` edge `(START, intake, extract, validate, verdict, report)`; stage definitions themselves stay plain agents so they remain readable and testable.
 - The live demo constructs the runner as `Runner(node=root_agent, app_name="invoice_fraud_agent", session_service=...)` — `Runner` accepts a root node, not an agent.
 - Sample data: `fraud_agent/data/*.json`. Labeled invoices carry `expected_verdict`, which only tests/demo may read — never the pipeline.
+- `ingest.py`: the document-upload input path. Format handlers (`_pdf_text`, `_docx_text`, `_txt_text`, XML via stdlib) extract raw text; `parse_invoice_text` (deterministic mock) and `parse_invoice_xml` (schema-direct) produce the same fields shape as `tools._live_extract`. Every failure returns `{"error": ...}`, never raises. New cases get `UPLOAD-####` ids, are appended to the in-memory `_data()` cache, and a JSON artifact is persisted under `fraud_agent/data/uploads/` (gitignored; override with `INVOICE_FRAUD_UPLOADS_DIR` in tests). Vendor names resolve case-insensitively to the master, else a stable `V-EXT-<slug>` id so the unknown-vendor check fires. The ADK tool function `ingest_invoice_document` lives in `ingest.py` (not `tools.py`) so the import flows one way (`ingest` → `tools`) — it reuses `tools._live_extract` instead of duplicating the prompt. New deps for ingestion: `pypdf`, `python-docx` (in requirements.txt).
 - Mock-first: every code path must work with no API key. Live Gemini paths degrade to mock with a clear note, never crash.
 - Reports go to `fraud_agent/reports/` (gitignored); tests write to `tmp_path`.
 - No secrets in code, logs, or commits. `.env` is gitignored; only `.env.example` is committed.

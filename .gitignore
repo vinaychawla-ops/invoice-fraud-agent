@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 .env
 fraud_agent/reports/
+fraud_agent/data/uploads/

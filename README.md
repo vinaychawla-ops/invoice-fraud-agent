@@ -25,10 +25,11 @@ fraud_agent/
 ├── data/                 # vendors.json, purchase_orders.json, invoices.json (mock, offline)
 ├── checks.py             # deterministic fraud checks -- pure functions, no I/O
 ├── tools.py              # data loading + extraction (mock/live) + ADK tool functions
+├── ingest.py             # document ingestion: PDF/DOCX/TXT/XML -> new case (see below)
 ├── pipeline.py           # deterministic offline driver: intake→extract→validate→verdict→report
 ├── agent.py              # real ADK Workflow wiring the same tools
-└── demo.py               # demo runner (mock default, --live for Gemini)
-tests/                    # pytest: checks, pipeline, agent wiring
+└── demo.py               # demo runner (mock default, --live for Gemini, --file for uploads)
+tests/                    # pytest: checks, pipeline, agent wiring, ingest
 ```
 
 Two paths, one source of truth: `pipeline.py` calls the tool functions directly (mock mode, no key needed), while `agent.py` wraps the *same* functions in ADK `FunctionTool`s inside a `Workflow` chain (`START → intake → extract → validate → verdict → report`). The fraud logic can't diverge between them.
@@ -57,6 +58,83 @@ pytest -q
 ```
 
 The demo prints a per-invoice verdict table plus a summary, and writes markdown case files to `fraud_agent/reports/`. In mock mode it also checks every verdict against the labeled expectations.
+
+## Uploading invoice documents
+
+Besides auditing invoices already in the data store by ID, you can ingest a
+supplier invoice document as a brand-new case:
+
+```bash
+python -m fraud_agent.demo --file path/to/invoice.pdf
+```
+
+Supported formats:
+
+| Format | Extension | How it's read |
+|--------|-----------|---------------|
+| PDF | `.pdf` | text extraction with pypdf |
+| Word | `.docx` | text extraction with python-docx |
+| Text | `.txt` | plain read (utf-8, latin-1 fallback) |
+| XML | `.xml` | parsed directly against the schema below (no LLM) |
+
+Legacy `.doc` files are rejected with a message suggesting `.docx`.
+Anything else gets a clear "unsupported file type" error.
+
+The document is parsed into fields, registered as `UPLOAD-0001`,
+`UPLOAD-0002`, … (in-memory for the run; a JSON copy is kept under
+`fraud_agent/data/uploads/` as an audit trail, gitignored), then audited
+with the **unchanged** pipeline and fraud checks:
+
+- The vendor name is matched case-insensitively against the vendor master.
+  Unknown vendors get a stable `V-EXT-<name>` id and trip the existing
+  unknown-vendor check (→ REJECT), exactly like `INV-2026-0109`.
+- A referenced PO number is linked when it exists in the PO register;
+  otherwise the standard no-PO / unknown-PO rules apply.
+- Duplicates, split-invoicing clusters, and math are checked against the
+  full history including previously ingested uploads.
+
+PDF/DOCX/TXT parsing is deterministic (mock) by default; add `--live`
+with `GOOGLE_API_KEY` to use Gemini extraction instead, reusing the same
+prompt as `extract_invoice_fields`. A copy of the ingested JSON is saved
+for the audit trail either way.
+
+In the chat agent, the intake stage knows about this path: say
+"audit the uploaded file at /path/to/invoice.pdf" and it calls the
+`ingest_invoice_document` tool first, then continues with the new case.
+
+**Limitations.** Scanned-image PDFs (no extractable text layer) are
+rejected with a clear error — OCR is future work, not this build. The
+plain-text parser expects the layout shown in `tests/test_ingest.py`
+(vendor on the first line, `Invoice <no> | Date: …`, `PO: …` or
+`PO: none`, `<desc> x<qty> @ $<price> = $<total>` lines, then
+`Subtotal:` / `Tax:` / `TOTAL:`); anything else falls back to live
+Gemini extraction or a parse error.
+
+### Invoice XML schema
+
+```xml
+<invoice>
+  <invoice_number>INV-9001</invoice_number>   <!-- required -->
+  <vendor_name>Acme Office Supplies</vendor_name>  <!-- required -->
+  <issue_date>2026-09-28</issue_date>         <!-- required, YYYY-MM-DD -->
+  <due_date>2026-10-28</due_date>             <!-- optional -->
+  <po_number>PO-501</po_number>               <!-- optional -->
+  <currency>USD</currency>                    <!-- optional, informational -->
+  <line_items>                               <!-- required, >= 1 item -->
+    <item>
+      <description>Widget</description>       <!-- required -->
+      <quantity>4</quantity>                  <!-- required, integer -->
+      <unit_price>95.00</unit_price>           <!-- required, number -->
+    </item>
+  </line_items>
+  <subtotal>380.00</subtotal>                 <!-- required, number -->
+  <tax>19.00</tax>                           <!-- required, number -->
+  <total>399.00</total>                      <!-- required, number -->
+</invoice>
+```
+
+Schema violations return a clear error listing every problem — no
+tracebacks.
 
 ## Mock vs live
 

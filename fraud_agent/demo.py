@@ -9,6 +9,11 @@ Live mode: drives the real ADK Workflow with Gemini extraction.
 Requires GOOGLE_API_KEY.
 
     GOOGLE_API_KEY=... python -m fraud_agent.demo --live
+
+File mode: ingest one invoice document (PDF, Word, text, or XML) as a
+new case and audit it -- mock parsing by default, live with --live.
+
+    python -m fraud_agent.demo --file path/to/invoice.pdf
 """
 from __future__ import annotations
 
@@ -130,11 +135,54 @@ def run_live() -> int:
     return 0
 
 
+def run_file(path: str, live: bool = False) -> int:
+    """Ingest one invoice document and audit it as a new case."""
+    from .ingest import ingest_invoice_document
+
+    if live:
+        if not os.environ.get("GOOGLE_API_KEY"):
+            print("error: --file --live requires the GOOGLE_API_KEY environment variable.",
+                  file=sys.stderr)
+            return 2
+        _fix_proxy_env()
+    mode = "live" if live else "mock"
+    print(f"invoice-fraud-agent demo -- FILE mode ({mode} parsing)\n")
+    print(f"ingesting {path} ...")
+    result = ingest_invoice_document(path, mode=mode)
+    if "error" in result:
+        print(f"ingestion failed: {result['error']}", file=sys.stderr)
+        return 1
+    invoice_id = result["invoice_id"]
+    print(
+        f"ingested as {invoice_id} | vendor: {result['vendor_name']} "
+        f"({result['vendor_id']}) | total: ${result['total']:,.2f} "
+        f"| parse: {result['extraction_mode']}\n"
+    )
+    print(f"{'invoice':14} {'vendor':24} {'total':>11}  {'verdict':15} top finding")
+    print("-" * 120)
+    res = run_pipeline(invoice_id, mode=mode)
+    if "error" in res:
+        print(f"pipeline failed: {res['error']}", file=sys.stderr)
+        return 1
+    top = res["findings"][0]["evidence"] if res["findings"] else "-"
+    top = (top[:64] + "...") if len(top) > 64 else top
+    _print_row(invoice_id, res["vendor_name"], res["total"], res["verdict"], finding=top)
+    print("-" * 120)
+    print(f"verdict: {res['verdict']} -- {res['recommended_action']}")
+    print(f"report written to: {res['report_path']}")
+    return 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="invoice-fraud-agent demo")
     parser.add_argument("--live", action="store_true",
                         help="run the real ADK agent with Gemini (needs GOOGLE_API_KEY)")
+    parser.add_argument("--file", metavar="PATH",
+                        help="ingest an invoice document (PDF/DOCX/TXT/XML) as a new "
+                             "case and audit it")
     args = parser.parse_args(argv)
+    if args.file:
+        return run_file(args.file, live=args.live)
     return run_live() if args.live else run_mock()
 
 

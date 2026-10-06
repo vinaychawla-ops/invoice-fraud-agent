@@ -20,6 +20,7 @@ from google.adk.workflow import Workflow, node, START
 from google.adk.tools import FunctionTool
 
 from . import tools as T
+from . import ingest as I
 
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
@@ -32,9 +33,13 @@ intake_agent = Agent(
         "The user gives you an invoice ID like INV-2026-0101. "
         "Call load_invoice_case with that ID, then briefly summarize the "
         "invoice: vendor, total, PO reference, and issue date. "
+        "If the user instead gives you a file path to an uploaded invoice "
+        "document (PDF, Word, text, or XML), call ingest_invoice_document "
+        "with that path first to create the case, then continue with the "
+        "returned invoice ID. "
         "If the invoice is unknown, say so and stop."
     ),
-    tools=[FunctionTool(T.load_invoice_case)],
+    tools=[FunctionTool(T.load_invoice_case), FunctionTool(I.ingest_invoice_document)],
 )
 
 extract_agent = Agent(

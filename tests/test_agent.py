@@ -11,7 +11,7 @@ from fraud_agent import agent as A
 
 EXPECTED_STAGES = ["intake", "extract", "validate", "verdict", "report"]
 EXPECTED_TOOLS = {
-    "intake": ["load_invoice_case"],
+    "intake": ["load_invoice_case", "ingest_invoice_document"],
     "extract": ["extract_invoice_fields"],
     "validate": ["run_fraud_checks"],
     "verdict": ["decide_invoice_verdict"],

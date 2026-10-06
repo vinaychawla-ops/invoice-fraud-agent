@@ -1,2 +1,4 @@
 google-adk>=2.11.0
 pytest>=8.0
+pypdf>=4
+python-docx>=1.1
