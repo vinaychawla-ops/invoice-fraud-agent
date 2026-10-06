@@ -5,7 +5,7 @@ sample invoice -- no API key, no network.
 
     python -m fraud_agent.demo
 
-Live mode: drives the real ADK SequentialAgent with Gemini extraction.
+Live mode: drives the real ADK Workflow with Gemini extraction.
 Requires GOOGLE_API_KEY.
 
     GOOGLE_API_KEY=... python -m fraud_agent.demo --live
@@ -106,10 +106,10 @@ def run_live() -> int:
 
     from .agent import root_agent
 
-    print("invoice-fraud-agent demo -- LIVE mode (ADK SequentialAgent + Gemini)\n")
+    print("invoice-fraud-agent demo -- LIVE mode (ADK Workflow + Gemini)\n")
     session_service = InMemorySessionService()
     runner = Runner(
-        agent=root_agent,
+        node=root_agent,
         app_name="invoice_fraud_agent",
         session_service=session_service,
     )

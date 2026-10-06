@@ -1,7 +1,7 @@
 """ADK agent wiring for the supplier-invoice fraud detector.
 
-A SequentialAgent runs five stages in order, each an LlmAgent with one
-job and the FunctionTools it needs:
+A Workflow runs five stages in order, each an LlmAgent wrapped as a
+graph node with one job and the FunctionTools it needs:
 
     intake -> extract -> validate -> verdict -> report
 
@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import os
 
-from google.adk.agents import Agent, SequentialAgent
+from google.adk.agents import Agent
+from google.adk.workflow import Workflow, node, START
 from google.adk.tools import FunctionTool
 
 from . import tools as T
@@ -89,18 +90,21 @@ report_agent = Agent(
     tools=[FunctionTool(T.write_case_report)],
 )
 
-root_agent = SequentialAgent(
+root_agent = Workflow(
     name="invoice_fraud_agent",
     description=(
         "Audits supplier invoices for fraud: intake, extraction, fraud "
         "checks, verdict, and case report. Verdicts are recommendations; "
         "a human makes the final call."
     ),
-    sub_agents=[
-        intake_agent,
-        extract_agent,
-        validate_agent,
-        verdict_agent,
-        report_agent,
+    edges=[
+        (
+            START,
+            node(intake_agent),
+            node(extract_agent),
+            node(validate_agent),
+            node(verdict_agent),
+            node(report_agent),
+        )
     ],
 )

@@ -26,12 +26,14 @@ fraud_agent/
 ├── checks.py             # deterministic fraud checks -- pure functions, no I/O
 ├── tools.py              # data loading + extraction (mock/live) + ADK tool functions
 ├── pipeline.py           # deterministic offline driver: intake→extract→validate→verdict→report
-├── agent.py              # real ADK SequentialAgent wiring the same tools
+├── agent.py              # real ADK Workflow wiring the same tools
 └── demo.py               # demo runner (mock default, --live for Gemini)
 tests/                    # pytest: checks, pipeline, agent wiring
 ```
 
-Two paths, one source of truth: `pipeline.py` calls the tool functions directly (mock mode, no key needed), while `agent.py` wraps the *same* functions in ADK `FunctionTool`s inside a `SequentialAgent`. The fraud logic can't diverge between them.
+Two paths, one source of truth: `pipeline.py` calls the tool functions directly (mock mode, no key needed), while `agent.py` wraps the *same* functions in ADK `FunctionTool`s inside a `Workflow` chain (`START → intake → extract → validate → verdict → report`). The fraud logic can't diverge between them.
+
+**Orchestration.** `agent.py` keeps the five stage definitions as plain `LlmAgent`s and turns each into a graph node with `workflow.node()`; `root_agent` is the `Workflow` built from the single chain edge. The live demo drives it with `Runner(node=root_agent, app_name="invoice_fraud_agent", session_service=...)` — `Runner` takes a root *node*, not an agent.
 
 ## Setup
 
@@ -47,7 +49,7 @@ cp .env.example .env   # only needed for --live; add your GOOGLE_API_KEY
 # Mock mode: deterministic pipeline over all 8 labeled sample invoices (no key needed)
 python -m fraud_agent.demo
 
-# Live mode: drives the real ADK SequentialAgent with Gemini extraction
+# Live mode: drives the real ADK Workflow with Gemini extraction
 GOOGLE_API_KEY=... python -m fraud_agent.demo --live
 
 # Tests
